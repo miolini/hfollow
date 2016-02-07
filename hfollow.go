@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -18,11 +19,19 @@ func main() {
 		cli.IntFlag{
 			Name:  "limit,l",
 			Value: 10,
+			Usage: "float64 value of timeout in seconds (for example, 10.5, 0.5)",
+		},
+		cli.Float64Flag{
+			Name:  "timeout,t",
+			Value: 15,
 		},
 	}
 	app.Usage = "follow http(s) redirect"
 	app.Action = followAction
-	app.Run(os.Args)
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func followAction(ctx *cli.Context) {
@@ -35,32 +44,40 @@ func followAction(ctx *cli.Context) {
 		log.Fatalf("parse url err: %s", err)
 	}
 	limit := ctx.Int("limit")
+	timeout := ctx.Float64("timeout")
+	if timeout < 0 {
+		log.Fatalf("timeout should be greater than zeo")
+	}
+	go func() {
+		time.Sleep(time.Duration(timeout*1000) * time.Millisecond)
+		log.Fatalf("timeout %.2f sec. reached", timeout)
+	}()
 	log.Printf("redirects limit: %d", limit)
-	addrP, err = getFinalUrl(addrP, limit)
+	addrP, err = getFinalURL(addrP, limit)
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
 	fmt.Println(addrP.String())
 }
 
-type FollowHttpClient struct {
+type followHTTPClient struct {
 	http.Client
 }
 
-func (c *FollowHttpClient) CheckRedirect(req *http.Request, via []*http.Request) error {
+func (c *followHTTPClient) CheckRedirect(req *http.Request, via []*http.Request) error {
 	log.Printf("redirect: %s", req.URL.String())
 	return nil
 }
 
-func getFinalUrl(addr *url.URL, level int) (*url.URL, error) {
+func getFinalURL(addr *url.URL, level int) (*url.URL, error) {
 	log.Printf("new request: %s", addr.String())
 	if level == 0 {
 		return nil, fmt.Errorf("too many redirects")
 	}
 	if addr.Scheme != "http" && addr.Scheme != "https" {
-		return nil, fmt.Errorf("unsupported url scheme: %S", addr.Scheme)
+		return nil, fmt.Errorf("unsupported url scheme: %s", addr.Scheme)
 	}
-	client := FollowHttpClient{}
+	client := followHTTPClient{}
 	req, err := http.NewRequest("GET", addr.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("request create err: %s", err)
@@ -69,30 +86,31 @@ func getFinalUrl(addr *url.URL, level int) (*url.URL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("request err: %s", err)
 	}
-	if strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
-		doc, err := goquery.NewDocumentFromResponse(resp)
-		if err != nil {
-			log.Fatalf("error parse html: %s", err)
-		}
-		redirect, ok := doc.Find("meta[http-equiv=refresh]").First().Attr("content")
-		if ok {
-			sepPos := strings.Index(redirect, ";")
-			if sepPos < 0 {
-				return nil, fmt.Errorf("bad html meta redirect: %s", redirect)
-			}
-			redirect = redirect[sepPos+1:]
-			sepPos = strings.Index(redirect, "=")
-			if sepPos < 0 {
-				return nil, fmt.Errorf("bad html meta redirect: %s", redirect)
-			}
-			redirect = redirect[sepPos+1:]
-			addr, err = url.Parse(redirect)
-			if err != nil {
-				return nil, fmt.Errorf("parse html redirect err: %s", err)
-			}
-			return getFinalUrl(addr, level-1)
-		}
-	}
 	defer resp.Body.Close()
-	return resp.Request.URL, nil
+	if !strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
+		return resp.Request.URL, err
+	}
+	doc, err := goquery.NewDocumentFromResponse(resp)
+	if err != nil {
+		log.Fatalf("error parse html: %s", err)
+	}
+	redirect, ok := doc.Find("meta[http-equiv=refresh]").First().Attr("content")
+	if !ok {
+		return resp.Request.URL, err
+	}
+	sepPos := strings.Index(redirect, ";")
+	if sepPos < 0 {
+		return nil, fmt.Errorf("bad html meta redirect: %s", redirect)
+	}
+	redirect = redirect[sepPos+1:]
+	sepPos = strings.Index(redirect, "=")
+	if sepPos < 0 {
+		return nil, fmt.Errorf("bad html meta redirect: %s", redirect)
+	}
+	redirect = redirect[sepPos+1:]
+	addr, err = url.Parse(redirect)
+	if err != nil {
+		return nil, fmt.Errorf("parse html redirect err: %s", err)
+	}
+	return getFinalURL(addr, level-1)
 }
