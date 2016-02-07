@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const userAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36"
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "hfollow"
@@ -82,6 +84,7 @@ func getFinalURL(addr *url.URL, level int) (*url.URL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("request create err: %s", err)
 	}
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request err: %s", err)
