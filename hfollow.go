@@ -73,7 +73,9 @@ func followAction(ctx *cli.Context) {
 	if err != nil {
 		log.Fatalf("jar new err: %s", err)
 	}
-	log.Printf("target addr: %s", addrP.String())
+	if flDebug {
+		log.Printf("target addr: %s", addrP.String())
+	}
 	addrP, err = getFinalURL(jar, addrP, limit)
 	if err != nil {
 		log.Fatalf("%s", err)
@@ -82,7 +84,9 @@ func followAction(ctx *cli.Context) {
 }
 
 func getFinalURL(jar *cookiejar.Jar, addr *url.URL, level int) (*url.URL, error) {
-	log.Printf("new request (level %d): %s", level, addr.String())
+	if flDebug {
+		log.Printf("new request (level %d): %s", level, addr.String())
+	}
 	if level == 0 {
 		return nil, fmt.Errorf("too many redirects")
 	}
@@ -173,7 +177,7 @@ func findMetaRedirect(data []byte) (*url.URL, error) {
 func findMetaByGoquery(data *bytes.Buffer) (*url.URL, error) {
 	doc, err := goquery.NewDocumentFromReader(data)
 	if err != nil {
-		log.Fatalf("error parse html: %s", err)
+		return nil, fmt.Errorf("error parse html: %s", err)
 	}
 	redirect, ok := doc.Find("meta[http-equiv=refresh]").First().Attr("content")
 	if !ok {
